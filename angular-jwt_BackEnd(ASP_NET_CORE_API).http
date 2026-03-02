@@ -1,0 +1,6 @@
+@angular_jwt_BackEnd_ASP_NET_CORE_API__HostAddress = http://localhost:5158
+
+GET {{angular_jwt_BackEnd_ASP_NET_CORE_API__HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
