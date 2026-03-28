@@ -47,7 +47,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AngularDev",
         policy =>
         {
-            policy.WithOrigins("http://localhost:4200")
+            policy.WithOrigins("https://localhost:4200")
                   .AllowAnyMethod()
                   .AllowAnyHeader()
                   .AllowCredentials(); // 如果有用 cookie 才需要

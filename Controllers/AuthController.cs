@@ -67,6 +67,18 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
         [HttpPost("Login")]
         public ActionResult login([FromBody] Login_User_Model login_user_data)
         {
+            //cookie 會自動覆蓋，不會有問題，但db 資料的還是要額外清理，下面那段就是額外清理的程式碼
+            // 刪掉該使用者所有舊的 refresh token
+            var userTokens = Simulation_Database
+                .Where(x => x.Value.Username == login_user_data.Username)
+                .Select(x => x.Key)
+                .ToList();
+
+            foreach (var key in userTokens)
+            {
+                Simulation_Database.TryRemove(key, out _);
+            }
+
             // 這裡直接模擬登入成功，實際應該驗證使用者名稱和密碼
             var role = login_user_data.Username.ToLower().Contains("admin") ? "Admin" : "User";
             var (access_token, access_token_exp) = _tokenService.createAccessToken(login_user_data.Username, role);
@@ -97,12 +109,22 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
 
             } while (!added);
 
+            // --- 🔑 關鍵改動：寫入 Cookie ---
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,   // JavaScript 讀不到，防 XSS
+                Secure = true,     // 僅限 HTTPS
+                SameSite = SameSiteMode.None, // 跨網域開發建議用 None (需搭配 Secure)
+                Expires = DateTime.UtcNow.AddDays(7)
+            };
+            Response.Cookies.Append("Refresh_Token", refresh_token, cookieOptions);
+
             return Ok(new Token_Model_Response
             {
                 Access_Token = access_token,
                 Access_Token_Expire_Time = access_token_exp,
-                Refresh_Token = refresh_token,
-                Refresh_Token_Expire_Time = refresh_token_exp,
+                //Refresh_Token = refresh_token,
+                //Refresh_Token_Expire_Time = refresh_token_exp,
                 Role = role
             });
         }
@@ -111,6 +133,10 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
         [HttpPost("refresh")]
         public ActionResult refresh([FromBody] Token_Model_Request request)
         {
+            // ---從 Cookie 讀取 ---
+            if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+                return Unauthorized("找不到 Refresh Token Cookie");
+
             var hash_token = HashToken(request.Refresh_Token);
             // 1️ 檢查 refresh token 是否存在
             if (!Simulation_Database.TryGetValue(hash_token, out var data_info))
@@ -151,16 +177,13 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
                 return Unauthorized("token 使用者不一致");
 
             // 5️ Rotation：刪除舊 refresh token
-            var oldHash = HashToken(request.Refresh_Token);
-            Simulation_Database.TryRemove(oldHash, out _);
+        
+            Simulation_Database.TryRemove(hash_token, out _);
 
             var role = data_info.Role;
 
             var (new_access_token, new_access_token_exp) =
                 _tokenService.createAccessToken(username, role);
-
-            //var (new_refresh_token, new_refresh_token_exp) =
-            //    _tokenService.createRefreshToken();
 
             var absoluteExpiry = data_info.AbsoluteExpiry;
 
@@ -169,8 +192,6 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
             string newHash;
 
             bool added;
-
-
 
             do
             {
@@ -191,15 +212,37 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
 
             } while (!added);
 
+            // --- 更新 Cookie ---
+            Response.Cookies.Append("Refresh_Token", new_refresh_token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = data_info.AbsoluteExpiry // 跟隨最大壽命
+            });
+
 
             return Ok(new Token_Model_Response
             {
                 Access_Token = new_access_token,
                 Access_Token_Expire_Time = new_access_token_exp,
-                Refresh_Token = new_refresh_token,
-                Refresh_Token_Expire_Time = new_refresh_token_exp,
+                //Refresh_Token = new_refresh_token,
+                //Refresh_Token_Expire_Time = new_refresh_token_exp,
                 Role = role
             });
+        }
+        [HttpPost("Logout")]
+        public IActionResult Logout()
+        {
+            // --- 從 Cookie 讀取 ---
+            if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+                return BadRequest("找不到 Refresh Token Cookie");
+            var hash_token = HashToken(refreshToken);
+            // 刪除 refresh token
+            Simulation_Database.TryRemove(hash_token, out _);
+            // --- 刪除 Cookie ---
+            Response.Cookies.Delete("Refresh_Token");
+            return Ok(new { message = "登出成功" });
         }
 
         [Authorize]
