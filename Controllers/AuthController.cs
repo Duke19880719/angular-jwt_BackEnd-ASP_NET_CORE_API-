@@ -134,10 +134,10 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
         public ActionResult refresh([FromBody] Token_Model_Request request)
         {
             // ---從 Cookie 讀取 ---
-            if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+            if (!Request.Cookies.TryGetValue("Refresh_Token", out var refreshToken))
                 return Unauthorized("找不到 Refresh Token Cookie");
 
-            var hash_token = HashToken(request.Refresh_Token);
+            var hash_token = HashToken(refreshToken);
             // 1️ 檢查 refresh token 是否存在
             if (!Simulation_Database.TryGetValue(hash_token, out var data_info))
                 return Unauthorized("無效的 refresh token");
@@ -231,12 +231,14 @@ namespace angular_jwt_BackEnd_ASP_NET_CORE_API_.Controllers
                 Role = role
             });
         }
+
         [HttpPost("Logout")]
         public IActionResult Logout()
         {
             // --- 從 Cookie 讀取 ---
-            if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+            if (!Request.Cookies.TryGetValue("Refresh_Token", out var refreshToken))
                 return BadRequest("找不到 Refresh Token Cookie");
+
             var hash_token = HashToken(refreshToken);
             // 刪除 refresh token
             Simulation_Database.TryRemove(hash_token, out _);
